@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# environnements virtuels
+.venv/
+venv/
+
+# build & publication
+dist/
+build/
+
+# outils de test
+.pytest_cache/
+
+# session locale
+.zcode/
