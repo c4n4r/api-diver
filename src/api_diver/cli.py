@@ -286,6 +286,9 @@ _TARGETS = {
     "agents": (Path(".agents/skills"), Path.home() / ".agents/skills"),
     "opencode": (Path(".opencode/skills"), Path.home() / ".config/opencode/skills"),
     "vibe": (Path(".vibe/skills"), Path.home() / ".vibe/skills"),
+    "claude": (Path(".claude/skills"), Path.home() / ".claude/skills"),
+    "codex": (Path(".agents/skills"), Path.home() / ".agents/skills"),  # dossier standard .agents, lu nativement par Codex >= 0.95
+    "copilot": (Path(".github/skills"), Path.home() / ".copilot/skills"),
 }
 
 
@@ -293,7 +296,7 @@ _TARGETS = {
 def build(
     name: Annotated[Optional[str], typer.Option("--name", "-n", help="Nom du skill (défaut : celui du workspace).")] = None,
     api: Annotated[Optional[str], typer.Option("--api", help="Limiter à une seule API du workspace.")] = None,
-    target: Annotated[str, typer.Option("--target", help="agents | opencode | vibe")] = "agents",
+    target: Annotated[str, typer.Option("--target", help=" | ".join(_TARGETS))] = "agents",
     out: Annotated[Optional[Path], typer.Option("--out", "-o", help="Dossier de sortie (défaut : ./<skill>).")] = None,
     install: Annotated[bool, typer.Option("--install", help="Copier le skill vers la cible choisie.")] = False,
     global_: Annotated[bool, typer.Option("--global", help="Installation niveau utilisateur, pas projet.")] = False,
@@ -301,7 +304,8 @@ def build(
 ) -> None:
     """Génère le dossier skill (SKILL.md + références) depuis le workspace."""
     if target not in _TARGETS:
-        _fail(ApiDiverError(f"cible inconnue « {target} » : attends agents, opencode ou vibe"))
+        expected = ", ".join(list(_TARGETS)[:-1]) + " ou " + list(_TARGETS)[-1]
+        _fail(ApiDiverError(f"cible inconnue « {target} » : attends {expected}"))
         raise
     ws = _workspace(workspace)
     if api:
@@ -339,6 +343,9 @@ def build(
             "agents": "visible par OpenCode et Mistral Vibe (dossier .agents partagé)",
             "opencode": "visible par OpenCode",
             "vibe": "visible par Mistral Vibe",
+            "claude": "visible par Claude Code",
+            "codex": "visible par Codex (dossier .agents partagé)",
+            "copilot": "visible par GitHub Copilot (VS Code, CLI, coding agent)",
         }
         console.print(f"  [dim]{hints[target]}[/dim]")
 

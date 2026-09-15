@@ -3,8 +3,9 @@
 Cartographie des swaggers/OpenAPI en **skills agents**. Tu donnes juste une URL
 (une spec JSON ou une page swagger-ui), api-diver découvre tout seul les specs
 derrière, les multi-domaines, les routes, leurs paramètres et payloads — puis
-génère un skill au format standard **Agent Skills** utilisable par OpenCode,
-Mistral Vibe (et tout agent compatible : Claude Code, ZCode... via `.agents/`).
+génère un skill au format standard **Agent Skills** installable pour OpenCode,
+Mistral Vibe, Claude Code, Codex, GitHub Copilot (et tout agent compatible via
+`.agents/`).
 
 ## Installation
 
@@ -28,8 +29,9 @@ api-diver update            # toutes les APIs
 api-diver update api-stock  # une seule
 
 # 4. générer / installer le skill
-api-diver build --install                  # .agents/skills/ (OpenCode + Vibe)
-api-diver build --target opencode --install
+api-diver build --install                  # .agents/skills/ (OpenCode + Vibe + Codex)
+api-diver build --target claude --install  # .claude/skills/ (Claude Code)
+api-diver build --target copilot --install # .github/skills/ (Copilot)
 api-diver build --target vibe --install --global
 ```
 
@@ -74,6 +76,17 @@ apis-perso/
 Les exemples curl utilisent des placeholders `$NOM_API_TOKEN`-style : aucun
 secret n'est jamais écrit dans le workspace ni le skill.
 
+## Cibles d'installation (`build --target`)
+
+| Cible | Dossier projet (`--install`) | Dossier global (`--install --global`) | Agent |
+|---|---|---|---|
+| `agents` (défaut) | `.agents/skills/` | `~/.agents/skills/` | OpenCode, Mistral Vibe, tout agent compatible |
+| `opencode` | `.opencode/skills/` | `~/.config/opencode/skills/` | OpenCode |
+| `vibe` | `.vibe/skills/` | `~/.vibe/skills/` | Mistral Vibe |
+| `claude` | `.claude/skills/` | `~/.claude/skills/` | Claude Code |
+| `codex` | `.agents/skills/` | `~/.agents/skills/` | Codex (≥ 0.95 : lit le dossier standard `.agents`) |
+| `copilot` | `.github/skills/` | `~/.copilot/skills/` | GitHub Copilot (VS Code, CLI, coding agent) |
+
 ## Authentification des sources protégées
 
 ```bash
@@ -97,7 +110,7 @@ moment et n'est **jamais stockée**.
 | `list` / `info <name>` | Explorer le workspace |
 | `diff <name>` | Changements de routes depuis la version précédente |
 | `remove <name>` | Supprimer une API |
-| `build [--target agents\|opencode\|vibe] [--install] [--global]` | Générer/installer le skill |
+| `build [--target agents\|opencode\|vibe\|claude\|codex\|copilot] [--install] [--global]` | Générer/installer le skill |
 
 ## Développement
 

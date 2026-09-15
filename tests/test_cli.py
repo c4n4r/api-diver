@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from typer.testing import CliRunner
 
-from api_diver.cli import app
+from api_diver.cli import app, _TARGETS
 from api_diver.crawler import CrawlResult
 from api_diver.fetcher import FetchedContent
 from api_diver import crawler as crawler_module
@@ -88,6 +88,17 @@ def test_build_and_install(kb, tmp_path, monkeypatch):
     # le nom du dossier = frontmatter name
     front = (installed / "SKILL.md").read_text().split("---")[1]
     assert "name: kb" in front
+
+
+@pytest.mark.parametrize("target", sorted(_TARGETS))
+def test_build_install_per_target(kb, monkeypatch, target):
+    monkeypatch.chdir(kb)
+    runner.invoke(app, ["add", PAGE])
+    result = runner.invoke(app, ["build", "--target", target, "--install"])
+    assert result.exit_code == 0, result.output
+
+    installed = kb / _TARGETS[target][0] / "kb"
+    assert (installed / "SKILL.md").is_file()
 
 
 def test_remove(kb):
