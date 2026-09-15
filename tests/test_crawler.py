@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from api_diver.crawler import crawl_source, derive_name_from_url
+from api_diver.crawler import CrawlProgress, crawl_source, derive_name_from_url
 from api_diver.fetcher import FetchedContent
 
 from conftest import AGENCY_TANKS_SPEC, ARTICLES_SPEC, SWASHBUCKLE_HTML, V3_DOC
@@ -55,6 +55,33 @@ def test_crawl_swashbuckle_multi_specs_merge():
 def test_derive_name_from_url():
     assert derive_name_from_url(PAGE) == "vnext-api-stock"
     assert derive_name_from_url("https://petstore.io/v2/swagger.json") == "petstore"
+
+
+def test_crawl_emits_progress_events():
+    fetch = make_fetcher(
+        {PAGE: SWASHBUCKLE_HTML},
+        {
+            "https://vnext.sosoxygene.com/api-stock/swagger/AgencyTanks/swagger.json": AGENCY_TANKS_SPEC,
+            "https://vnext.sosoxygene.com/api-stock/swagger/Articles/swagger.json": ARTICLES_SPEC,
+        },
+    )
+    events: list[CrawlProgress] = []
+    crawl_source(PAGE, fetch_fn=fetch, on_progress=events.append)
+
+    # 2 événements par spec (téléchargement puis analyse), avec compteurs et libellés
+    assert [(e.phase, e.done, e.total, e.label) for e in events] == [
+        ("download", 1, 2, "Agency Tanks"),
+        ("download", 2, 2, "Articles"),
+        ("parse", 1, 2, "Agency Tanks"),
+        ("parse", 2, 2, "Articles"),
+    ]
+
+
+def test_crawl_progress_callback_optional():
+    # sans callback, le crawl reste silencieux et identique
+    fetch = make_fetcher({}, {"https://x.io/openapi.json": V3_DOC})
+    result = crawl_source("https://x.io/openapi.json", name="stock", fetch_fn=fetch)
+    assert result.spec.name == "stock"
 
 
 def test_roundtrip_normalized(tmp_path):

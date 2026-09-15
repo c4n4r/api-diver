@@ -18,7 +18,7 @@ PAGE = "https://vnext.sosoxygene.com/api-stock/swagger/index.html"
 def kb(tmp_path, monkeypatch):
     """Workspace initialisé + crawl factice (sans réseau)."""
 
-    def fake_crawl(source_url, headers=None, name=None, fetch_fn=None):
+    def fake_crawl(source_url, headers=None, name=None, fetch_fn=None, on_progress=None):
         def fetch(url):
             if url == PAGE:
                 return FetchedContent(url=url, kind="html", data=SWASHBUCKLE_HTML)

@@ -7,12 +7,20 @@ from typing import Annotated, List, Optional
 
 import typer
 from rich.console import Console
-from rich.table import Table
+from rich.progress import (
+    BarColumn,
+    MofNCompleteColumn,
+    Progress,
+    SpinnerColumn,
+    TextColumn,
+    TimeElapsedColumn,
+)
+from rich.table import Column, Table
 
 from . import __version__
-from .crawler import crawl_source
+from .crawler import CrawlProgress, CrawlResult, crawl_source
 from .errors import ApiDiverError
-from .fetcher import build_headers, split_header_arg
+from .fetcher import FetchedContent, build_headers, make_fetcher, split_header_arg
 from .generator.skill import generate_skill
 from .util import slugify
 from .workspace import Workspace
@@ -57,6 +65,52 @@ def _workspace(explicit: Optional[Path]) -> Workspace:
         raise  # inatteignable
 
 
+def _crawl_with_progress(url: str, headers: dict[str, str] | None, name: str | None) -> CrawlResult:
+    """Crawl une source en affichant une ligne de progression (réseau puis analyse).
+
+    La progression part sur stderr et se désactive hors terminal (tests, CI, pipe) ;
+    elle disparaît une fois terminée pour laisser la place au résumé.
+    """
+    progress = Progress(
+        SpinnerColumn(),
+        TextColumn(
+            "[progress.description]{task.description}",
+            table_column=Column(overflow="ellipsis", no_wrap=True),
+        ),
+        BarColumn(bar_width=None),
+        MofNCompleteColumn(),
+        TimeElapsedColumn(),
+        console=err_console,
+        transient=True,
+        disable=not err_console.is_terminal,
+    )
+    fetch = make_fetcher(headers)
+    with progress:
+        task = progress.add_task(f"Récupération : {url}", total=None)
+        bar_started = False
+
+        def wrapped_fetch(target: str) -> FetchedContent:
+            # tant qu'aucune barre n'a démarré, montrer l'URL en cours (page source, sondes de découverte)
+            if not bar_started:
+                progress.update(task, description=f"Récupération : {target}")
+            return fetch(target)
+
+        def on_progress(event: CrawlProgress) -> None:
+            nonlocal bar_started
+            bar_started = True
+            label = "Téléchargement des specs" if event.phase == "download" else "Analyse des specs"
+            progress.update(
+                task,
+                description=f"{label} — {event.label}",
+                total=event.total,
+                completed=event.done,
+            )
+
+        return crawl_source(
+            url, headers=headers, name=name, fetch_fn=wrapped_fetch, on_progress=on_progress
+        )
+
+
 def _store(ws: Workspace, url: str, name: Optional[str], header_args: Optional[List[str]]) -> None:
     """Crawl une source puis l'enregistre (utilisé par add et update)."""
     stored, inline = {}, []
@@ -84,7 +138,7 @@ def _store(ws: Workspace, url: str, name: Optional[str], header_args: Optional[L
             inline.append(key)
     try:
         headers = build_headers(stored=stored, header_args=header_args)
-        result = crawl_source(url, headers=headers, name=name)
+        result = _crawl_with_progress(url, headers=headers, name=name)
     except ApiDiverError as exc:
         _fail(exc)
         raise
@@ -175,8 +229,10 @@ def update(
     if not targets:
         console.print("Aucune API dans le workspace : commence par `api-diver add <url>`.")
         return
-    for api_name in targets:
+    for index, api_name in enumerate(targets, start=1):
         entry = ws.require(api_name)
+        if len(targets) > 1:
+            console.print(f"[dim]Mise à jour {index}/{len(targets)} : {api_name}…[/dim]")
         _store(ws, entry["source_url"], api_name, header)
 
 

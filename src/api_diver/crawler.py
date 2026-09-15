@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable, NamedTuple
 from urllib.parse import urlsplit
 
 from .discovery import DiscoveredSpec, discover_specs
@@ -39,6 +39,18 @@ class CrawlResult:
     notes: list[str] = field(default_factory=list)  # informations de découverte
 
 
+class CrawlProgress(NamedTuple):
+    """Événement de progression émis pendant le crawl (phase : « download » ou « parse »)."""
+
+    phase: str
+    done: int
+    total: int
+    label: str
+
+
+ProgressHook = Callable[[CrawlProgress], None]
+
+
 def _fetch_spec_or_die(fetch_fn: FetchFn, url: str, label: str, warnings: list[str]) -> dict | None:
     try:
         fetched: FetchedContent = fetch_fn(url)
@@ -59,6 +71,7 @@ def crawl_source(
     headers: dict[str, str] | None = None,
     name: str | None = None,
     fetch_fn: FetchFn | None = None,
+    on_progress: ProgressHook | None = None,
 ) -> CrawlResult:
     fetch = fetch_fn or make_fetcher(headers)
 
@@ -97,7 +110,9 @@ def crawl_source(
 
     parsed_specs: list[tuple[DiscoveredSpec, dict]] = []
     raw_docs: list[tuple[str, dict]] = []
-    for ds in discovered:
+    for index, ds in enumerate(discovered, start=1):
+        if on_progress is not None:
+            on_progress(CrawlProgress("download", index, len(discovered), ds.label or ds.url))
         raw = _fetch_spec_or_die(fetch, ds.url, ds.label, warnings)
         if raw is not None:
             parsed_specs.append((ds, raw))
@@ -111,7 +126,9 @@ def crawl_source(
 
     parse_warnings: list[str] = []
     parsed_apis: list[tuple[DiscoveredSpec, ApiSpec]] = []
-    for ds, raw in parsed_specs:
+    for index, (ds, raw) in enumerate(parsed_specs, start=1):
+        if on_progress is not None:
+            on_progress(CrawlProgress("parse", index, len(parsed_specs), ds.label or ds.url))
         try:
             spec = parse_document(
                 raw,
