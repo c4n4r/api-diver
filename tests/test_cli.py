@@ -69,6 +69,47 @@ def test_update_diff(kb):
     assert result.exit_code == 0, result.output
 
 
+def test_update_skill_installs_to_detected_agents(kb, monkeypatch):
+    monkeypatch.chdir(kb)
+    runner.invoke(app, ["add", PAGE])
+    (kb / ".claude").mkdir()
+    (kb / ".agents").mkdir()
+    result = runner.invoke(app, ["update", "--skill"])
+    assert result.exit_code == 0, result.output
+    assert "installé" in result.output
+    assert (kb / ".claude" / "skills" / "kb" / "SKILL.md").is_file()
+    assert (kb / ".agents" / "skills" / "kb" / "SKILL.md").is_file()
+    # .agents et .claude détectés, mais pas .opencode (absent du projet)
+    assert not (kb / ".opencode").exists()
+
+
+def test_update_skill_without_agents_warns(kb, monkeypatch):
+    monkeypatch.chdir(kb)
+    runner.invoke(app, ["add", PAGE])
+    result = runner.invoke(app, ["update", "--skill"])
+    assert result.exit_code == 0, result.output
+    assert "aucun agent détecté" in result.output
+    # rien n'est généré ni installé sans cible
+    assert not (kb / "kb").exists()
+
+
+def test_update_skill_copilot_marker_anchored_to_workspace(kb, monkeypatch):
+    runner.invoke(app, ["add", PAGE, "--workspace", str(kb)])
+    gh = kb / ".github"
+    gh.mkdir()
+    (gh / "copilot-instructions.md").write_text("instructions")
+    # lancé depuis un sous-dossier : détection et installation restent ancrées au workspace
+    sub = kb / "sous-dossier"
+    sub.mkdir()
+    monkeypatch.chdir(sub)
+    result = runner.invoke(app, ["update", "--skill"])
+    assert result.exit_code == 0, result.output
+    assert (gh / "skills" / "kb" / "SKILL.md").is_file()
+    assert (kb / "kb" / "SKILL.md").is_file()
+    assert not (sub / ".github").exists()
+    assert not (sub / "kb").exists()
+
+
 def test_info(kb):
     runner.invoke(app, ["add", PAGE, "--workspace", str(kb)])
     result = runner.invoke(app, ["info", "vnext-api-stock", "--workspace", str(kb)])

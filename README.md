@@ -106,11 +106,17 @@ moment et n'est **jamais stockée**.
 |---|---|
 | `init [path]` | Créer le workspace |
 | `add <url> [--name n]` | Crawler + ajouter une source (découverte auto) |
-| `update [name]` | Re-crawler et rafraîchir les routes (+ résumé diff) |
+| `update [name] [--skill]` | Re-crawler et rafraîchir les routes (+ résumé diff) |
 | `list` / `info <name>` | Explorer le workspace |
 | `diff <name>` | Changements de routes depuis la version précédente |
 | `remove <name>` | Supprimer une API |
 | `build [--target agents\|opencode\|vibe\|claude\|codex\|copilot] [--install] [--global]` | Générer/installer le skill |
+
+`update --skill` enchaîne la mise à jour avec la régénération du skill complet,
+réinstallé automatiquement vers les agents détectés dans le projet
+(`.agents/`, `.claude/`, `.opencode/`, `.vibe/`, `.github/skills` ou
+`.github/copilot-instructions.md`). Sans agent détecté, rien n'est installé —
+utilise `build --install --target <cible>`.
 
 ## Développement
 

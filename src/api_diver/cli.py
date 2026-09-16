@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 from typing import Annotated, List, Optional
 
@@ -221,6 +222,13 @@ def add(
 def update(
     name: Annotated[Optional[str], typer.Argument(help="API à mettre à jour (défaut : toutes).")] = None,
     header: HeaderOpt = None,
+    skill: Annotated[
+        bool,
+        typer.Option(
+            "--skill",
+            help="Régénère ensuite le skill complet et le réinstalle vers les agents détectés dans le projet (.agents, .claude, .opencode, …).",
+        ),
+    ] = False,
     workspace: WorkspaceOpt = None,
 ) -> None:
     """Re-crawl les sources : rediscovery + refresh des routes, avec résumé du diff."""
@@ -234,6 +242,8 @@ def update(
         if len(targets) > 1:
             console.print(f"[dim]Mise à jour {index}/{len(targets)} : {api_name}…[/dim]")
         _store(ws, entry["source_url"], api_name, header)
+    if skill:
+        _refresh_skill(ws)
 
 
 @app.command("list")
@@ -347,6 +357,84 @@ _TARGETS = {
     "copilot": (Path(".github/skills"), Path.home() / ".copilot/skills"),
 }
 
+_TARGET_HINTS = {
+    "agents": "visible par OpenCode, Mistral Vibe et Codex (dossier .agents partagé)",
+    "opencode": "visible par OpenCode",
+    "vibe": "visible par Mistral Vibe",
+    "claude": "visible par Claude Code",
+    "codex": "visible par Codex (dossier .agents partagé)",
+    "copilot": "visible par GitHub Copilot (VS Code, CLI, coding agent)",
+}
+
+# marqueurs projet -> agent vraisemblablement utilisé (codex partage .agents)
+_PROJECT_MARKERS = {
+    "agents": (".agents",),
+    "opencode": (".opencode",),
+    "vibe": (".vibe",),
+    "claude": (".claude",),
+    # .github seul est trop générique (workflows…) : il faut un marqueur Copilot
+    "copilot": (".github/skills", ".github/copilot-instructions.md"),
+}
+
+
+def _detect_project_targets(base: Path) -> list[str]:
+    """Agents détectés dans le projet (dossiers .agents, .claude, …)."""
+    return [
+        target
+        for target, markers in _PROJECT_MARKERS.items()
+        if any((base / marker).exists() for marker in markers)
+    ]
+
+
+def _install_skill(
+    out_dir: Path,
+    skill_name: str,
+    target: str,
+    global_: bool = False,
+    base_dir: Path | None = None,
+) -> Path:
+    """Copie le skill généré vers la cible (remplace un skill existant)."""
+    if global_:
+        base = _TARGETS[target][1]
+    else:
+        base = (base_dir or Path.cwd()) / _TARGETS[target][0]
+    destination = base / skill_name
+    if destination.exists():
+        if not (destination / "SKILL.md").is_file():
+            _fail(ApiDiverError(f"refus d'écraser {destination} (pas un skill)"))
+            raise  # inatteignable
+        shutil.rmtree(destination)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(out_dir, destination)
+    return destination
+
+
+def _refresh_skill(ws: Workspace) -> None:
+    """Régénère le skill du workspace et le réinstalle vers les agents détectés."""
+    targets = _detect_project_targets(ws.root)
+    if not targets:
+        console.print(
+            "[yellow]⚠[/yellow] aucun agent détecté dans le projet "
+            "(.agents, .claude, .opencode, .vibe, .github/copilot…) : skill non réinstallé. "
+            "Utilise `api-diver build --install --target <cible>`."
+        )
+        return
+    skill_name = ws.skill_name
+    out_dir = ws.root / skill_name
+    try:
+        specs = [ws.load_api(n) for n in sorted(ws.sources)]
+        created = generate_skill(specs, skill_name, out_dir)
+    except ApiDiverError as exc:
+        _fail(exc)
+        raise
+    console.print(
+        f"[green]✔[/green] skill [bold]{skill_name}[/bold] régénéré : {out_dir} "
+        f"({len(created)} fichiers · {len(specs)} API(s) · {sum(len(s.routes) for s in specs)} routes)"
+    )
+    for target in targets:
+        destination = _install_skill(out_dir, skill_name, target, base_dir=ws.root)
+        console.print(f"[green]✔[/green] installé : {destination} [dim]({_TARGET_HINTS[target]})[/dim]")
+
 
 @app.command()
 def build(
@@ -383,27 +471,9 @@ def build(
     console.print(f"  {len(created)} fichiers · {len(specs)} API(s) · {sum(len(s.routes) for s in specs)} routes")
 
     if install:
-        import shutil
-
-        base = _TARGETS[target][1 if global_ else 0]
-        destination = base / skill_name
-        if destination.exists():
-            if not (destination / "SKILL.md").is_file():
-                _fail(ApiDiverError(f"refus d'écraser {destination} (pas un skill)"))
-                raise
-            shutil.rmtree(destination)
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(out_dir, destination)
+        destination = _install_skill(out_dir, skill_name, target, global_=global_)
         console.print(f"[green]✔[/green] installé : {destination}")
-        hints = {
-            "agents": "visible par OpenCode et Mistral Vibe (dossier .agents partagé)",
-            "opencode": "visible par OpenCode",
-            "vibe": "visible par Mistral Vibe",
-            "claude": "visible par Claude Code",
-            "codex": "visible par Codex (dossier .agents partagé)",
-            "copilot": "visible par GitHub Copilot (VS Code, CLI, coding agent)",
-        }
-        console.print(f"  [dim]{hints[target]}[/dim]")
+        console.print(f"  [dim]{_TARGET_HINTS[target]}[/dim]")
 
 
 def _version_callback(value: bool) -> None:
