@@ -60,6 +60,43 @@ def test_flatten_and_example():
     assert example["address"]["city"] == "string"
 
 
+def test_required_flags_rendered(tmp_path):
+    out = tmp_path / "mon-skill"
+    generate_skill([_crawl_v3()], "mon-skill", out)
+    customers = (out / "apis" / "stock" / "routes" / "customers.md").read_text()
+    post_section = customers.partition("### POST `/customers`")[2].partition("###")[0]
+    # CustomerInput déclare `name` comme requis
+    assert "| `name` | string | oui |" in post_section
+    assert "| `address` | Address | non |" in post_section
+
+
+def test_response_schema_rendered(tmp_path):
+    out = tmp_path / "mon-skill"
+    generate_skill([_crawl_v3()], "mon-skill", out)
+    customers = (out / "apis" / "stock" / "routes" / "customers.md").read_text()
+    get_section = customers.partition("### GET `/customers`")[2].partition("###")[0]
+    assert "**Réponse 200** (application/json) — schéma : `CustomerList`" in get_section
+    assert "| `items` | array<Customer> | non |" in get_section
+    assert "| `items[].id` | string | oui |" in get_section
+    assert "| `items[].name` | string | oui |" in get_section
+    assert "Exemple de réponse :" in get_section
+    assert '"items"' in get_section
+    # le tableau résumé reste, avec le nom de schéma
+    assert "| 200 | OK | application/json : `CustomerList` |" in get_section
+
+
+def test_response_schema_v2_top_level_array(tmp_path):
+    out = tmp_path / "mon-skill"
+    generate_skill([_crawl_v2()], "mon-skill", out)
+    pets = (out / "apis" / "petstore" / "routes" / "pets.md").read_text()
+    get_section = pets.partition("### GET `/pets`")[2].partition("###")[0]
+    assert "**Réponse 200** (application/json) — schéma : `array<Pet>`" in get_section
+    assert "| `[].id` | integer | oui |" in get_section
+    assert "| `[].name` | string | oui |" in get_section
+    assert "application/json : `array<Pet>`" in get_section
+    assert "Exemple de réponse :" in get_section
+
+
 def test_curl_v3_post():
     spec = _crawl_v3()
     post = next(r for r in spec.routes if r.method == "post")

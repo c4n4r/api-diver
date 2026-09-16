@@ -12,6 +12,7 @@ from .util import (
     md_cell,
     param_type_label,
     pick_body,
+    pick_response,
     schema_type_label,
 )
 
@@ -135,6 +136,29 @@ def render_route(route: Route, api: ApiSpec) -> str:
             lines.append(
                 f"| {md_cell(response.status, 12)} | {md_cell(response.description, 150)} | {corpus} |"
             )
+        lines.append("")
+
+    detail = pick_response(route)
+    if detail is not None:
+        response, content_type, schema = detail
+        name = schema.ref_name or (schema_type_label(schema) if schema.type == "array" else "")
+        label = f" — schéma : {code_span(name)}" if name else ""
+        lines.append(f"**Réponse {response.status}** ({content_type}){label}")
+        lines.append("")
+        rows = flatten_schema(schema)
+        if rows:
+            lines.append("| Propriété | Type | Requis | Description |")
+            lines.append("| --- | --- | --- | --- |")
+            for prop_path, prop_schema, required in rows:
+                lines.append(
+                    f"| {code_span(prop_path)} | {md_cell(schema_type_label(prop_schema), 60)} "
+                    f"| {'oui' if required else 'non'} | {md_cell(prop_schema.description, 200)} |"
+                )
+            lines.append("")
+        lines.append("Exemple de réponse :")
+        lines.append("```json")
+        lines.append(json_example(schema))
+        lines.append("```")
         lines.append("")
 
     lines.append("**Exemple curl**")

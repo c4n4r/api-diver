@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from ..model import Parameter, SchemaNode
+from ..model import Parameter, Response, SchemaNode
 
 _FORMAT_EXAMPLES = {
     "date-time": "2026-01-01T12:00:00Z",
@@ -35,11 +35,11 @@ def code_span(text: Any) -> str:
 def schema_type_label(schema: SchemaNode | None) -> str:
     if schema is None:
         return "any"
-    base = schema.type
-    if base == "array":
-        inner = schema_type_label(schema.items)
-        return f"array<{inner}>"
-    label = base
+    if schema.type == "array":
+        return f"array<{schema_type_label(schema.items)}>"
+    if schema.ref_name and schema.type in ("object", "any", "ref"):
+        return schema.ref_name
+    label = schema.type
     if schema.enum:
         shown = ", ".join(str(e) for e in schema.enum[:5])
         more = "…" if len(schema.enum) > 5 else ""
@@ -99,8 +99,8 @@ def example_from_schema(schema: SchemaNode | None, depth: int = 0, max_depth: in
         if depth >= max_depth:
             return {}
         names = [n for n in schema.required if n in schema.properties]
-        if not names:
-            names = list(schema.properties)[:6]
+        # quelques propriétés optionnelles en plus, pour un exemple parlé
+        names += [n for n in schema.properties if n not in names][: max(0, 6 - len(names))]
         return {
             n: example_from_schema(schema.properties[n], depth + 1, max_depth)
             for n in names
@@ -136,3 +136,14 @@ def pick_body(route) -> tuple[str, SchemaNode] | None:
     if not ordered:
         return None
     return ordered[0]
+
+
+def pick_response(route) -> tuple[Response, str, SchemaNode] | None:
+    """Choisit la réponse de succès à détailler : premier 2xx avec un schéma JSON."""
+    for response in route.responses:
+        if not str(response.status).startswith("2"):
+            continue
+        for content_type, schema in response.content_types.items():
+            if "json" in content_type:
+                return response, str(content_type), schema
+    return None

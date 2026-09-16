@@ -84,6 +84,9 @@ def build_schema(node: Any, depth: int = 0) -> Optional[SchemaNode]:
                 "(" + ", ".join(notes) + ")"
             )
 
+    required = node.get("required")
+    if isinstance(required, list):
+        schema.required = [str(r) for r in required]
     enum = node.get("enum")
     if isinstance(enum, list):
         schema.enum = enum
@@ -110,7 +113,7 @@ def build_schema(node: Any, depth: int = 0) -> Optional[SchemaNode]:
         if alts:
             first = alts[0]
             schema.properties = first.properties
-            schema.required = first.required
+            schema.required = list(dict.fromkeys(schema.required + first.required))
             schema.items = first.items
             schema.enum = first.enum
             if first.type not in ("object",):
