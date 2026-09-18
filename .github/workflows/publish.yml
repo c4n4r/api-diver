@@ -1,0 +1,35 @@
+name: Publish to PyPI
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # requis pour le Trusted Publishing (OIDC)
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Tests
+        run: |
+          uv sync
+          uv run pytest
+
+      - name: Build (sdist + wheel)
+        run: uv build
+
+      - name: Cohérence tag ↔ version pyproject.toml
+        run: |
+          VERSION="$(uv version --short)"
+          if [ "${GITHUB_REF_NAME#v}" != "$VERSION" ]; then
+            echo "::error::Le tag $GITHUB_REF_NAME ne correspond pas à la version $VERSION dans pyproject.toml"
+            exit 1
+          fi
+
+      - name: Publication sur PyPI (Trusted Publishing)
+        run: uv publish
