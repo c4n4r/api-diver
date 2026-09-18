@@ -24,7 +24,7 @@ from .errors import ApiDiverError
 from .fetcher import FetchedContent, build_headers, make_fetcher, split_header_arg
 from .generator.skill import generate_skill
 from .util import slugify
-from .workspace import Workspace
+from .workspace import DEFAULT_SKILL_NAME, Workspace
 
 app = typer.Typer(
     name="api-diver",
@@ -183,7 +183,9 @@ def _store(ws: Workspace, url: str, name: Optional[str], header_args: Optional[L
 @app.command()
 def init(
     path: Annotated[Path, typer.Argument(help="Dossier du workspace (défaut : courant).")] = Path("."),
-    skill_name: Annotated[Optional[str], typer.Option("--skill-name", help="Nom du skill généré.")] = None,
+    skill_name: Annotated[
+        Optional[str], typer.Option("--skill-name", help="Nom du skill généré (défaut : api-diver).")
+    ] = None,
 ) -> None:
     """Crée un workspace (base de connaissance) dans le dossier donné."""
     try:
@@ -348,13 +350,15 @@ def diff(
     console.print(table)
 
 
+# (dossier projet, dossier global) — le global en notation « ~ » est résolu à
+# l'exécution (Path.home() à l'import figerait le HOME des tests)
 _TARGETS = {
-    "agents": (Path(".agents/skills"), Path.home() / ".agents/skills"),
-    "opencode": (Path(".opencode/skills"), Path.home() / ".config/opencode/skills"),
-    "vibe": (Path(".vibe/skills"), Path.home() / ".vibe/skills"),
-    "claude": (Path(".claude/skills"), Path.home() / ".claude/skills"),
-    "codex": (Path(".agents/skills"), Path.home() / ".agents/skills"),  # dossier standard .agents, lu nativement par Codex >= 0.95
-    "copilot": (Path(".github/skills"), Path.home() / ".copilot/skills"),
+    "agents": (Path(".agents/skills"), "~/.agents/skills"),
+    "opencode": (Path(".opencode/skills"), "~/.config/opencode/skills"),
+    "vibe": (Path(".vibe/skills"), "~/.vibe/skills"),
+    "claude": (Path(".claude/skills"), "~/.claude/skills"),
+    "codex": (Path(".agents/skills"), "~/.agents/skills"),  # dossier standard .agents, lu nativement par Codex >= 0.95
+    "copilot": (Path(".github/skills"), "~/.copilot/skills"),
 }
 
 _TARGET_HINTS = {
@@ -395,7 +399,7 @@ def _install_skill(
 ) -> Path:
     """Copie le skill généré vers la cible (remplace un skill existant)."""
     if global_:
-        base = _TARGETS[target][1]
+        base = Path(_TARGETS[target][1]).expanduser()
     else:
         base = (base_dir or Path.cwd()) / _TARGETS[target][0]
     destination = base / skill_name
@@ -407,6 +411,42 @@ def _install_skill(
     destination.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(out_dir, destination)
     return destination
+
+
+def _is_generated_skill(folder: Path) -> bool:
+    """Vrai pour un dossier de skill généré par api-diver (signature du SKILL.md)."""
+    skill_md = folder / "SKILL.md"
+    if not skill_md.is_file():
+        return False
+    try:
+        return "# Cartographie d'APIs" in skill_md.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return False
+
+
+def _clean_legacy_skill_dirs(ws: Workspace, new_dir: Path, install_bases: list[Path]) -> None:
+    """Efface les traces de l'ancien nommage (skill nommé d'après le dossier projet).
+
+    Le dossier généré dans le workspace est renommé vers le nouveau nom (son contenu
+    est de toute façon régénéré juste après) ; les anciennes installations agent
+    (`.agents/skills/<vieux-nom>`, …) sont supprimées pour ne laisser qu'un skill.
+    """
+    legacy = ws.legacy_skill_name
+    if legacy is None:
+        return
+    old_dir = ws.root / legacy
+    if _is_generated_skill(old_dir):
+        if new_dir.exists():
+            shutil.rmtree(old_dir)
+            console.print(f"[dim]ancien dossier de skill supprimé (doublon) : {old_dir}[/dim]")
+        else:
+            old_dir.rename(new_dir)
+            console.print(f"[dim]ancien dossier de skill renommé : {old_dir} → {new_dir}[/dim]")
+    for base in install_bases:
+        old_installed = base / legacy
+        if _is_generated_skill(old_installed):
+            shutil.rmtree(old_installed)
+            console.print(f"[dim]ancienne installation supprimée : {old_installed}[/dim]")
 
 
 def _refresh_skill(ws: Workspace) -> None:
@@ -421,6 +461,7 @@ def _refresh_skill(ws: Workspace) -> None:
         return
     skill_name = ws.skill_name
     out_dir = ws.root / skill_name
+    _clean_legacy_skill_dirs(ws, out_dir, [ws.root / _TARGETS[t][0] for t in targets])
     try:
         specs = [ws.load_api(n) for n in sorted(ws.sources)]
         created = generate_skill(specs, skill_name, out_dir)
@@ -438,10 +479,13 @@ def _refresh_skill(ws: Workspace) -> None:
 
 @app.command()
 def build(
-    name: Annotated[Optional[str], typer.Option("--name", "-n", help="Nom du skill (défaut : celui du workspace).")] = None,
+    name: Annotated[
+        Optional[str],
+        typer.Option("--name", "-n", help="Nom du skill (défaut : api-diver)."),
+    ] = None,
     api: Annotated[Optional[str], typer.Option("--api", help="Limiter à une seule API du workspace.")] = None,
     target: Annotated[str, typer.Option("--target", help=" | ".join(_TARGETS))] = "agents",
-    out: Annotated[Optional[Path], typer.Option("--out", "-o", help="Dossier de sortie (défaut : ./<skill>).")] = None,
+    out: Annotated[Optional[Path], typer.Option("--out", "-o", help="Dossier de sortie (défaut : ./api-diver).")] = None,
     install: Annotated[bool, typer.Option("--install", help="Copier le skill vers la cible choisie.")] = False,
     global_: Annotated[bool, typer.Option("--global", help="Installation niveau utilisateur, pas projet.")] = False,
     workspace: WorkspaceOpt = None,
@@ -454,13 +498,19 @@ def build(
     ws = _workspace(workspace)
     if api:
         specs = [ws.load_api(api)]
-        default_skill = slugify(api, fallback="api")
+        default_skill = DEFAULT_SKILL_NAME
     else:
         specs = [ws.load_api(n) for n in sorted(ws.sources)]
         default_skill = ws.skill_name
     skill_name = slugify(name, fallback=default_skill) if name else default_skill
 
     out_dir = Path(out) if out else Path.cwd() / skill_name
+    if install:
+        # base d'installation effective (projet ou utilisateur) : même résolution que _install_skill
+        install_base = (
+            Path(_TARGETS[target][1]).expanduser() if global_ else Path.cwd() / _TARGETS[target][0]
+        )
+        _clean_legacy_skill_dirs(ws, ws.root / skill_name, [install_base])
     try:
         created = generate_skill(specs, skill_name, out_dir)
     except ApiDiverError as exc:

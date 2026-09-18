@@ -39,7 +39,7 @@ def _route(path, method="get", tags=None):
 
 def test_init_and_store(tmp_path):
     ws = Workspace.create(tmp_path / "kb")
-    assert ws.skill_name == "kb"
+    assert ws.skill_name == "api-diver"
     diff = ws.store_api(
         _spec(routes=[_route("/a"), _route("/b")]),
         spec_urls=[{"url": "https://x/stock", "label": ""}],
@@ -105,6 +105,26 @@ def test_duplicate_init_refused(tmp_path):
     Workspace.create(tmp_path / "kb")
     with pytest.raises(WorkspaceError):
         Workspace.create(tmp_path / "kb")
+
+
+def test_legacy_skill_name_migrated(tmp_path):
+    """Un ancien workspace (nom de skill = nom du dossier) repasse à « api-diver »."""
+    ws = Workspace.create(tmp_path / "kb")
+    ws.registry["skill_name"] = "kb"  # ancien défaut dérivé du dossier projet
+    ws._dump()
+
+    reloaded = Workspace(tmp_path / "kb")
+    assert reloaded.skill_name == "api-diver"
+    # migré aussi sur disque
+    on_disk = json.loads((tmp_path / "kb" / "apidiver.json").read_text())
+    assert on_disk["skill_name"] == "api-diver"
+
+
+def test_custom_skill_name_preserved(tmp_path):
+    """Un nom choisi explicitement n'est pas touché par la migration."""
+    ws = Workspace.create(tmp_path / "kb")
+    ws.set_skill_name("mon-skill")
+    assert Workspace(tmp_path / "kb").skill_name == "mon-skill"
 
 
 def test_crawl_to_workspace_end_to_end(tmp_path):

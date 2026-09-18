@@ -34,6 +34,10 @@ api-diver build --target copilot --install # .github/skills/ (Copilot)
 api-diver build --target vibe --install --global
 ```
 
+The skill is always named `api-diver` (folder `api-diver/`, command
+`/api-diver` — identical in every project). Override with
+`init --skill-name` or `build --name`.
+
 ## What `add` does (automatic discovery)
 
 1. Fetches the URL; if it is already a swagger.json/openapi.json → direct spec.
@@ -51,9 +55,10 @@ api-diver build --target vibe --install --global
 ```
 my-apis/
 ├── apidiver.json           # registry: sources, spec URLs, auth refs
-└── specs/<api>/
-    ├── raw/*.json          # downloaded raw specs (+ .prev: history)
-    └── normalized.json     # merged model (+ .prev)
+├── specs/<api>/
+│   ├── raw/*.json          # downloaded raw specs (+ .prev: history)
+│   └── normalized.json     # merged model (+ .prev)
+└── api-diver/              # generated skill (build / update --skill)
 ```
 
 - `api-diver list` / `info <api>` / `diff <api>`: explore the workspace.
@@ -62,7 +67,7 @@ my-apis/
 ## Generated skill
 
 ```
-<skill>/
+api-diver/
 ├── SKILL.md                # index + navigation guide (progressive disclosure)
 └── apis/<api>/
     ├── overview.md         # domains (base URLs), groups, auth, tags
@@ -115,7 +120,10 @@ fetch only and is **never stored**.
 automatically reinstalled to the agents detected in the project
 (`.agents/`, `.claude/`, `.opencode/`, `.vibe/`, `.github/skills` or
 `.github/copilot-instructions.md`). If no agent is detected, nothing is
-installed — use `build --install --target <target>`.
+installed — use `build --install --target <target>`. Both `update --skill`
+and `build --install` also clean up the legacy naming: a skill folder (or
+agent install) still named after the project folder is renamed/removed in
+favor of `api-diver`.
 
 ## Development
 

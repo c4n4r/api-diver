@@ -14,6 +14,7 @@ from .util import slugify
 
 REGISTRY_NAME = "apidiver.json"
 REGISTRY_VERSION = 1
+DEFAULT_SKILL_NAME = "api-diver"
 
 
 def _now() -> str:
@@ -36,10 +37,9 @@ class Workspace:
             raise WorkspaceError(f"un workspace existe déjà ici : {registry_file}")
         root.mkdir(parents=True, exist_ok=True)
         (root / "specs").mkdir(exist_ok=True)
-        default_skill = slugify(root.name, fallback="mes-apis")
         registry = {
             "version": REGISTRY_VERSION,
-            "skill_name": default_skill,
+            "skill_name": DEFAULT_SKILL_NAME,
             "created_at": _now(),
             "sources": {},
         }
@@ -74,6 +74,12 @@ class Workspace:
         except (json.JSONDecodeError, OSError) as exc:
             raise WorkspaceError(f"registry illisible : {registry_file} ({exc})") from exc
         self.registry.setdefault("sources", {})
+        # migration : les anciens workspace dérivaient le nom du skill du dossier projet ;
+        # on repasse au nom fixe « api-diver » (commande identique partout), sans toucher
+        # aux noms choisis explicitement via `init --skill-name`
+        if self.registry.get("skill_name") == slugify(self.root.name, fallback=""):
+            self.registry["skill_name"] = DEFAULT_SKILL_NAME
+            self._dump()
 
     def _dump(self) -> None:
         registry_file = self.root / REGISTRY_NAME
@@ -86,7 +92,19 @@ class Workspace:
 
     @property
     def skill_name(self) -> str:
-        return str(self.registry.get("skill_name") or "mes-apis")
+        return str(self.registry.get("skill_name") or DEFAULT_SKILL_NAME)
+
+    @property
+    def legacy_skill_name(self) -> str | None:
+        """Ancien nom de skill par défaut (dérivé du dossier projet), s'il diffère.
+
+        Sert à nettoyer les dossiers créés avant le passage au nom fixe
+        « api-diver » : `<projet>/<projet>/` et `.agents/skills/<projet>/`.
+        """
+        legacy = slugify(self.root.name, fallback="")
+        if not legacy or legacy == self.skill_name:
+            return None
+        return legacy
 
     def set_skill_name(self, name: str) -> None:
         self.registry["skill_name"] = slugify(name, fallback=self.skill_name)

@@ -77,8 +77,8 @@ def test_update_skill_installs_to_detected_agents(kb, monkeypatch):
     result = runner.invoke(app, ["update", "--skill"])
     assert result.exit_code == 0, result.output
     assert "installé" in result.output
-    assert (kb / ".claude" / "skills" / "kb" / "SKILL.md").is_file()
-    assert (kb / ".agents" / "skills" / "kb" / "SKILL.md").is_file()
+    assert (kb / ".claude" / "skills" / "api-diver" / "SKILL.md").is_file()
+    assert (kb / ".agents" / "skills" / "api-diver" / "SKILL.md").is_file()
     # .agents et .claude détectés, mais pas .opencode (absent du projet)
     assert not (kb / ".opencode").exists()
 
@@ -90,7 +90,7 @@ def test_update_skill_without_agents_warns(kb, monkeypatch):
     assert result.exit_code == 0, result.output
     assert "aucun agent détecté" in result.output
     # rien n'est généré ni installé sans cible
-    assert not (kb / "kb").exists()
+    assert not (kb / "api-diver").exists()
 
 
 def test_update_skill_copilot_marker_anchored_to_workspace(kb, monkeypatch):
@@ -104,10 +104,65 @@ def test_update_skill_copilot_marker_anchored_to_workspace(kb, monkeypatch):
     monkeypatch.chdir(sub)
     result = runner.invoke(app, ["update", "--skill"])
     assert result.exit_code == 0, result.output
-    assert (gh / "skills" / "kb" / "SKILL.md").is_file()
-    assert (kb / "kb" / "SKILL.md").is_file()
+    assert (gh / "skills" / "api-diver" / "SKILL.md").is_file()
+    assert (kb / "api-diver" / "SKILL.md").is_file()
     assert not (sub / ".github").exists()
-    assert not (sub / "kb").exists()
+    assert not (sub / "api-diver").exists()
+
+
+def test_update_skill_renames_legacy_folders(kb, monkeypatch):
+    monkeypatch.chdir(kb)
+    runner.invoke(app, ["add", PAGE])
+    (kb / ".claude").mkdir()
+    # vieux nommage : skill généré et installé sous le nom du dossier projet (« kb »)
+    legacy = kb / "kb"
+    legacy.mkdir()
+    (legacy / "SKILL.md").write_text("---\nname: kb\n---\n# Cartographie d'APIs\n")
+    old_install = kb / ".claude" / "skills" / "kb"
+    old_install.mkdir(parents=True)
+    (old_install / "SKILL.md").write_text("---\nname: kb\n---\n# Cartographie d'APIs\n")
+
+    result = runner.invoke(app, ["update", "--skill"])
+    assert result.exit_code == 0, result.output
+    assert "renommé" in result.output
+    # l'ancien dossier est renommé (puis régénéré), l'ancienne installation supprimée
+    assert not legacy.exists()
+    assert not old_install.exists()
+    assert (kb / "api-diver" / "SKILL.md").is_file()
+    assert (kb / ".claude" / "skills" / "api-diver" / "SKILL.md").is_file()
+
+
+def test_update_skill_removes_legacy_duplicate(kb, monkeypatch):
+    monkeypatch.chdir(kb)
+    runner.invoke(app, ["add", PAGE])
+    (kb / ".agents").mkdir()
+    legacy = kb / "kb"
+    legacy.mkdir()
+    (legacy / "SKILL.md").write_text("# Cartographie d'APIs\n")
+    fresh = kb / "api-diver"  # déjà généré au nouveau nom par le passé
+    fresh.mkdir()
+    (fresh / "SKILL.md").write_text("# Cartographie d'APIs\n")
+
+    result = runner.invoke(app, ["update", "--skill"])
+    assert result.exit_code == 0, result.output
+    # le nouveau dossier existe déjà : l'ancien n'est plus qu'un doublon à supprimer
+    assert not legacy.exists()
+    assert (kb / "api-diver" / "SKILL.md").is_file()
+
+
+def test_update_skill_leaves_foreign_folder_alone(kb, monkeypatch):
+    monkeypatch.chdir(kb)
+    runner.invoke(app, ["add", PAGE])
+    (kb / ".agents").mkdir()
+    # un dossier homonyme qui n'est pas un skill api-diver ne doit pas être touché
+    foreign = kb / "kb"
+    foreign.mkdir()
+    (foreign / "SKILL.md").write_text("# Un skill d'un autre outil\n")
+
+    result = runner.invoke(app, ["update", "--skill"])
+    assert result.exit_code == 0, result.output
+    assert (foreign / "SKILL.md").is_file()
+    assert (kb / "api-diver" / "SKILL.md").is_file()
 
 
 def test_info(kb):
@@ -123,12 +178,14 @@ def test_build_and_install(kb, tmp_path, monkeypatch):
     result = runner.invoke(app, ["build", "--install"])
     assert result.exit_code == 0, result.output
 
-    installed = kb / ".agents" / "skills" / "kb"
+    # généré dans ./api-diver (nom fixe, indépendant du dossier projet)
+    assert (kb / "api-diver" / "SKILL.md").is_file()
+    installed = kb / ".agents" / "skills" / "api-diver"
     assert (installed / "SKILL.md").is_file()
     assert (installed / "apis" / "vnext-api-stock" / "routes" / "_index.md").is_file()
     # le nom du dossier = frontmatter name
     front = (installed / "SKILL.md").read_text().split("---")[1]
-    assert "name: kb" in front
+    assert "name: api-diver" in front
 
 
 @pytest.mark.parametrize("target", sorted(_TARGETS))
@@ -138,8 +195,42 @@ def test_build_install_per_target(kb, monkeypatch, target):
     result = runner.invoke(app, ["build", "--target", target, "--install"])
     assert result.exit_code == 0, result.output
 
-    installed = kb / _TARGETS[target][0] / "kb"
+    installed = kb / _TARGETS[target][0] / "api-diver"
     assert (installed / "SKILL.md").is_file()
+
+
+def test_build_install_cleans_legacy_folders(kb, monkeypatch):
+    monkeypatch.chdir(kb)
+    runner.invoke(app, ["add", PAGE])
+    legacy = kb / "kb"
+    legacy.mkdir()
+    (legacy / "SKILL.md").write_text("---\nname: kb\n---\n# Cartographie d'APIs\n")
+    old_install = kb / ".agents" / "skills" / "kb"
+    old_install.mkdir(parents=True)
+    (old_install / "SKILL.md").write_text("---\nname: kb\n---\n# Cartographie d'APIs\n")
+
+    result = runner.invoke(app, ["build", "--install"])
+    assert result.exit_code == 0, result.output
+    # l'ancien dossier est renommé puis régénéré, l'ancienne installation supprimée
+    assert not legacy.exists()
+    assert not old_install.exists()
+    assert (kb / "api-diver" / "SKILL.md").is_file()
+    assert (kb / ".agents" / "skills" / "api-diver" / "SKILL.md").is_file()
+
+
+def test_build_install_global_cleans_legacy(kb, monkeypatch, tmp_path):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    old_global = home / ".agents" / "skills" / "kb"
+    old_global.mkdir(parents=True)
+    (old_global / "SKILL.md").write_text("---\nname: kb\n---\n# Cartographie d'APIs\n")
+    monkeypatch.chdir(kb)
+    runner.invoke(app, ["add", PAGE])
+
+    result = runner.invoke(app, ["build", "--install", "--global"])
+    assert result.exit_code == 0, result.output
+    assert not old_global.exists()
+    assert (home / ".agents" / "skills" / "api-diver" / "SKILL.md").is_file()
 
 
 def test_remove(kb):

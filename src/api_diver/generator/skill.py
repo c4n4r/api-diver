@@ -19,7 +19,7 @@ def build_frontmatter(skill_name: str, apis: list[ApiSpec]) -> str:
     if not NAME_RE.fullmatch(skill_name) or len(skill_name) > 64:
         raise GeneratorError(
             f"nom de skill invalide : {skill_name!r} "
-            "(attendu : minuscules/chiffres/tirets, max 64, ex: mes-apis)"
+            "(attendu : minuscules/chiffres/tirets, max 64, ex: api-diver)"
         )
     names = ", ".join(a.name for a in apis)
     description = (
