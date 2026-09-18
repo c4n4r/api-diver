@@ -1,6 +1,6 @@
 [project]
 name = "api-diver"
-version = "0.5.0"
+version = "0.6.0"
 description = "Cartographie des swaggers/OpenAPI (multi-domaines, multi-APIs) en skills agents"
 readme = "README.md"
 requires-python = ">=3.10"
